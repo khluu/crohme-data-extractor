@@ -15,6 +15,47 @@ import pickle
 
 from PIL import Image
 from PIL import ImageDraw
+from statistics import median 
+import ctypes
+import itertools
+import numpy as np
+
+
+################ DANNY's C Code ########
+def wrap_function(lib, funcname, restype, argtypes):
+    """Simplify wrapping ctypes functions"""
+    func = lib.__getattr__(funcname)
+    func.restype = restype
+    func.argtypes = argtypes
+    return func
+
+try:
+    bez_fit_lib = ctypes.CDLL('./bezier_fit.so')
+except OSError:
+
+    print(  "-----ERROR Missing C module -----\n" +
+            "Looks like you're missing bezier_fit.so. "+
+            "You can compile it for your system by running 'make bezier_fit.so' "+
+            "in AL_HTML/react_interface/src/tutors/Stylus/c_modules/src/ "+
+            "then copy it into this directory.")
+    sys.exit()
+
+BUFFER_SIZE = 2048
+
+point_ptr = (ctypes.c_double * BUFFER_SIZE)()
+bezier_ptr = (ctypes.c_double * BUFFER_SIZE)()
+mlFeature_ptr = (ctypes.c_double * (BUFFER_SIZE * 5) )()
+c_fitCurve = wrap_function(bez_fit_lib,"c_FitCurve",ctypes.c_int,[ctypes.POINTER(ctypes.c_double),ctypes.c_int,ctypes.c_double,ctypes.POINTER(ctypes.c_double)]);
+c_mlEncode = wrap_function(bez_fit_lib,"c_ML_EncodeCurves",None,[ctypes.POINTER(ctypes.c_double),ctypes.c_int,ctypes.POINTER(ctypes.c_double)]);
+def fitCurve(coords,error=6.0):
+    if(len(coords)==1):coords = [coords[0],coords[0]]
+    flat_coords = np.array(coords,dtype=np.float64)[:,:2].reshape(-1)
+    point_ptr[:len(coords)*2] = flat_coords#np.array(list(itertools.chain(*coords)),dtype=np.float64)
+    n_beziers = c_fitCurve(point_ptr,len(coords),error*error,bezier_ptr)
+    c_mlEncode(bezier_ptr,n_beziers,mlFeature_ptr)
+    return np.array(mlFeature_ptr[:9*n_beziers]).reshape((-1,9))
+
+########################################
 
 class Extractor(object):
 
@@ -41,13 +82,13 @@ class Extractor(object):
 
             return categories
 
-    def __init__(self, box_size, versions="2013", categories="all"):
+    def __init__(self,versions="2013", categories="all"):
 
-        try:
-            self.box_size = int(box_size)
-        except ValueError:
-            print("\n! Box size must be a number!\n")
-            exit()
+        # try:
+        #     self.box_size = int(box_size)
+        # except ValueError:
+        #     print("\n! Box size must be a number!\n")
+        #     exit()
 
         # Load list of possibble categories
         self.categories_available = self.load_categories()
@@ -91,7 +132,7 @@ class Extractor(object):
         self.test_data = []
         self.validation_data = []
 
-    def pixels(self):
+    def bezier(self):
 
         # Load inkml files
         for version in self.versions:
@@ -144,8 +185,8 @@ class Extractor(object):
 
         'Accumulates traces_data of all the inkml files\
         located in the specified directory'
-        patterns_enc = []
-        classes_rejected = []
+        encoded_samples = []
+        # classes_rejected = []
 
         'Check object is a directory'
         if os.path.isdir(data_dir_abs_path):
@@ -161,62 +202,107 @@ class Extractor(object):
                         which might(NOT) have its label encoded along with traces that it\'s made up of **** '
                     traces_data_curr_inkml = self.get_traces_data(inkml_file_abs_path)
 
-                    'Each entry in patterns_enc is a dictionary consisting of \
-                    pattern_drawn matrix and its label'
-                    ptrns_enc_inkml_curr, classes_rej_inkml_curr = self.convert_to_imgs(traces_data_curr_inkml, box_size=self.box_size)
-                    patterns_enc += ptrns_enc_inkml_curr
-                    classes_rejected += classes_rej_inkml_curr
+                    # print("CURR")
+                    # print(traces_data_curr_inkml)
+                    # 'Each entry in patterns_enc is a dictionary consisting of \
+                    # pattern_drawn matrix and its label'
+                    encoded_samples.append(self.convert_to_bezier(traces_data_curr_inkml))
+                    # patterns_enc += ptrns_enc_inkml_curr
+                    # classes_rejected += classes_rej_inkml_curr
 
-        return patterns_enc
+        return encoded_samples
+    
 
-    def convert_to_imgs(self, traces_data, box_size):
+    def convert_to_bezier(self, traces_data):
 
-        patterns_enc = []
-        classes_rejected = []
+        # patterns_enc = []
 
-        for pattern in traces_data:
+        symbol_encs = []
+        # classes_rejected = []
 
-            trace_group = pattern['trace_group']
+        # symbol_maxDims = []
 
-            'mid coords needed to shift the pattern'
-            min_x, min_y, max_x, max_y = self.get_min_coords(trace_group)
-
-            'traceGroup dimensions'
-            trace_grp_height, trace_grp_width = max_y - min_y, max_x - min_x
-
-            'shift pattern to its relative position'
-            shifted_trace_grp = self.shift_trace_grp(trace_group, min_x=min_x, min_y=min_y)
-
-            'Interpolates a pattern so that it fits into a box with specified size'
-            'method: LINEAR INTERPOLATION'
+        for symbol in traces_data['symbols']:
+            stroke_coords = []
+            stroke_beziers = []
             try:
-                interpolated_trace_grp = self.interpolate(shifted_trace_grp, \
-                                                     trace_grp_height=trace_grp_height, trace_grp_width=trace_grp_width, box_size=self.box_size - 1)
-            except Exception as e:
-                print(e)
-                print('This data is corrupted - skipping.')
-                classes_rejected.append(pattern.get('label'))
-
+                for trace_id in symbol['trace_group']:
+                    trace = traces_data['traces'][trace_id]
+                    # print(trace['coords'],type(trace['coords']))
+                    stroke_coords.append(trace['coords'])
+                    stroke_beziers.append(fitCurve(trace['coords']))
+                    # print(stroke_beziers[-1])
+            except Exception:
+                print("corrupted data... skipping")
                 continue
 
-            'Get min, max coords once again in order to center scaled patter inside the box'
-            min_x, min_y, max_x, max_y = self.get_min_coords(interpolated_trace_grp)
+            symbol_enc = {"label":symbol['label'],"coords": stroke_coords, "feat_bez_curves" : stroke_beziers}
+            symbol_encs.append(symbol_enc)
 
-            centered_trace_grp = self.center_pattern(interpolated_trace_grp, max_x=max_x, max_y=max_y, box_size=self.box_size)
 
-            'Center scaled pattern so it fits a box with specified size'
-            pattern_drawn = self.draw_pattern(centered_trace_grp, box_size=self.box_size)
-            # plt.imshow(pattern_drawn, cmap='gray')
-            # plt.show()
+            # min_x, min_y, max_x, max_y = self.get_min_coords(trace_group)
+            # width = max_x - min_x;
+            # height = max_y - min_y;
+            # symbol_maxDims.append(max(width,height))
 
-            pattern_enc = dict({'features': pattern_drawn, 'label': pattern.get('label')})
+            # print(symbol['label'],max(width,height))
+        return symbol_encs
+        # medianMaxDim = median(symbol_maxDims)
+        # ScaleRatio = box_size/medianMaxDim
 
-            # Filter classes that belong to categories selected by the user
-            if pattern_enc.get('label') in self.classes:
 
-                patterns_enc.append(pattern_enc)
 
-        return patterns_enc, classes_rejected
+        
+        
+        
+
+
+        # print("MEDIAN", medianMaxDim)
+        
+        # for pattern in traces_data:
+
+        #     trace_group = pattern['trace_group']
+
+        #     'mid coords needed to shift the pattern'
+        #     min_x, min_y, max_x, max_y = self.get_min_coords(trace_group)
+
+        #     'traceGroup dimensions'
+        #     trace_grp_height, trace_grp_width = max_y - min_y, max_x - min_x
+
+        #     'shift pattern to its relative position'
+        #     shifted_trace_grp = self.shift_trace_grp(trace_group, min_x=min_x, min_y=min_y)
+
+        #     'Interpolates a pattern so that it fits into a box with specified size'
+        #     'method: LINEAR INTERPOLATION'
+        #     try:
+        #         interpolated_trace_grp = self.interpolate(shifted_trace_grp, \
+        #                                              trace_grp_height=trace_grp_height, trace_grp_width=trace_grp_width, box_size=self.box_size - 1)
+        #     except Exception as e:
+        #         print(e)
+        #         print('This data is corrupted - skipping.')
+        #         classes_rejected.append(pattern.get('label'))
+
+        #         continue
+
+        #     'Get min, max coords once again in order to center scaled patter inside the box'
+        #     min_x, min_y, max_x, max_y = self.get_min_coords(interpolated_trace_grp)
+
+        #     centered_trace_grp = self.center_pattern(interpolated_trace_grp, max_x=max_x, max_y=max_y, box_size=self.box_size)
+
+        #     print(centered_trace_grp)
+        #     # 'Center scaled pattern so it fits a box with specified size'
+        #     # pattern_drawn = self.draw_pattern(centered_trace_grp, box_size=self.box_size)
+        #     # plt.imshow(pattern_drawn, cmap='gray')
+        #     # plt.show()
+
+        #     pattern_enc = dict({'features': pattern_drawn, 'label': pattern.get('label')})
+
+        #     # Filter classes that belong to categories selected by the user
+        #     if pattern_enc.get('label') in self.classes:
+
+        #         patterns_enc.append(pattern_enc)
+
+        # return patterns_enc, classes_rejected
 
     # Extracting / parsing tools below
     def get_traces_data(self, inkml_file_abs_path):
@@ -255,8 +341,8 @@ class Extractor(object):
                     traceDataRef = int(traceView.get('traceDataRef'))
 
                     'Each trace is represented by a list of coordinates to connect'
-                    single_trace = traces_all[traceDataRef]['coords']
-                    traces_curr.append(single_trace)
+                    # single_trace = traces_all[traceDataRef]['coords']
+                    traces_curr.append(traceDataRef)
 
 
                 traces_data.append({'label': label, 'trace_group': traces_curr})
@@ -265,7 +351,7 @@ class Extractor(object):
             'Consider Validation data that has no labels'
             [traces_data.append({'trace_group': [trace['coords']]}) for trace in traces_all]
 
-        return traces_data
+        return {"traces" : traces_all, "symbols" : traces_data}
 
     def get_min_coords(self, trace_group):
 
@@ -375,59 +461,70 @@ def to_one_hot(class_name, classes):
 def save_data(datas):
     count = 0
     for i, data in enumerate(datas):
-        for point in data:
-            if point["label"] == "/":
-                point["label"] = "forward-slash"
-            if not os.path.exists("extracted_images/" + point["label"]):
-                print("new label", point["label"])
-                os.makedirs("extracted_images/" + point["label"])
-            point["features"] = point["features"] * 255
-            point["features"] = point["features"].astype(np.uint8)
-            Image.fromarray(point["features"]).convert("RGB").save("extracted_images/%s/%d_%d.png" % (point["label"], count, i))
-            count += 1
+        #DO SOMETING
+        pass
+        # for point in data:
+            # if point["label"] == "/":
+            #     point["label"] = "forward-slash"
+            # if not os.path.exists("extracted_images/" + point["label"]):
+            #     print("new label", point["label"])
+            #     os.makedirs("extracted_images/" + point["label"])
+            # point["features"] = point["features"] * 255
+            # point["features"] = point["features"].astype(np.uint8)
+            # Image.fromarray(point["features"]).convert("RGB").save("extracted_images/%s/%d_%d.png" % (point["label"], count, i))
+            # count += 1
 
 if __name__ == '__main__':
 
     out_formats = ['pixels', 'hog', 'phog']
 
-    if len(sys.argv) < 3:
+    if len(sys.argv) < 1:
 
-        print("\n! Usage:", "python", sys.argv[0], "<out_format>", "<box_size>", "<dataset_version=2013>", "<category=all>\n")
+        print("\n! Usage:", "python", sys.argv[0], "<dataset_version=2013>", "<category=all>\n")
         exit()
 
-    elif len(sys.argv) >= 3:
+    elif len(sys.argv) >= 1:
 
-        if sys.argv[1] in out_formats:
+        # if sys.argv[1] in out_formats:
 
-            out_format = sys.argv[1]
-            extractor = Extractor(sys.argv[2])
-        else:
+        #     out_format = sys.argv[1]
+        #     extractor = Extractor(sys.argv[2])
+        # else:
 
-            print("\n! This output format does not exist!\n")
-            print("# Possible output formats:\n")
-            # [print(" ", out_format) for out_format in out_formats]
-            exit()
-        if len(sys.argv) == 4:
-            extractor = Extractor(sys.argv[2], sys.argv[3])
-        elif len(sys.argv) == 5:
-            extractor = Extractor(sys.argv[2], sys.argv[3], sys.argv[4])
+        #     print("\n! This output format does not exist!\n")
+        #     print("# Possible output formats:\n")
+        #     # [print(" ", out_format) for out_format in out_formats]
+        #     exit()
+        if len(sys.argv) == 2:
+            extractor = Extractor(sys.argv[1])
+        elif len(sys.argv) == 3:
+            extractor = Extractor(sys.argv[1], sys.argv[2])
 
     # Extract pixel features
-    if out_format == out_formats[0]:
+    # if out_format == out_formats[0]:
 
-        train_data, test_data, validation_data = extractor.pixels()
-        data_to_save = [train_data.copy(), test_data.copy(), validation_data.copy()]
-        # Get list of all classes
-        classes = sorted(list(set([data_record['label'] for data_record in train_data+test_data])))
-        print('How many classes:', len(classes))
-        with open('classes.txt', 'w') as desc:
-            for r_class in classes:
-                desc.write(r_class + '\n')
+    train_data, test_data, validation_data = extractor.bezier()
+    data_to_save = [train_data.copy(), test_data.copy(), validation_data.copy()]
+    # print(train_data)
+    # print(test_data)
+    # print(validation_data)
+    # Get list of all classes
+    # classes = sorted(list(set([data_record['label'] for data_record in train_data+test_data])))
+    # print()
+    # print('How many classes:', len(classes))
 
-        ### Save DATA new ###
-            if not os.path.exists("extracted_images"):
-                os.makedirs("extracted_images")
-            save_data([train_data, test_data, validation_data])
+    raise NotImplemented("I haven't actually written any thing to store or use this dataset"
+                         "yet. Might want to store as an HDF5 and load it into a notebook.")
+    # with open('classes.txt', 'w') as desc:
+    #     for r_class in classes:
+    #         desc.write(r_class + '\n')
+
+    # ### Save DATA new ###
+    #     if not os.path.exists("extracted_images"):
+    #         os.makedirs("extracted_images")
+    #     save_data([train_data, test_data, validation_data])
+
+    # print("ALL DONE")
 
 
         ###

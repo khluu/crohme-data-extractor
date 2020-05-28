@@ -20,6 +20,55 @@ import ctypes
 import itertools
 import numpy as np
 
+import numpy as np
+import h5py
+import os
+import h5py
+
+#Adapted from here: https://codereview.stackexchange.com/questions/120802/recursively-save-python-dictionaries-to-hdf5-files-using-h5py/121308
+def save_dict_to_hdf5(dic, filename):
+    """
+    ....
+    """
+    with h5py.File(filename, 'w') as h5file:
+        recursively_save_dict_contents_to_group(h5file, '/', dic)
+
+def recursively_save_dict_contents_to_group(h5file, path, dic):
+    """
+    ....
+    """
+    if isinstance(dic, list):
+        dic = {str(i):v for i,v in enumerate(dic)}
+    for key, item in dic.items():
+        if isinstance(item, (np.ndarray, np.int64, np.float64, str, bytes)):
+            h5file[path + key] = item
+        elif isinstance(item, list):
+            item_as_dict = {str(i):v for i,v in enumerate(item)}
+            recursively_save_dict_contents_to_group(h5file, path + key + '/', item_as_dict)
+        elif isinstance(item, dict):
+            recursively_save_dict_contents_to_group(h5file, path + key + '/', item)
+        else:
+            raise ValueError('Cannot save %s type'%type(item))
+
+def load_dict_from_hdf5(filename):
+    """
+    ....
+    """
+    with h5py.File(filename, 'r') as h5file:
+        return recursively_load_dict_contents_from_group(h5file, '/')
+
+def recursively_load_dict_contents_from_group(h5file, path):
+    """
+    ....
+    """
+    ans = {}
+    for key, item in h5file[path].items():
+        if isinstance(item, h5py._hl.dataset.Dataset):
+            ans[key] = item.value
+        elif isinstance(item, h5py._hl.group.Group):
+            ans[key] = recursively_load_dict_contents_from_group(h5file, path + key + '/')
+    return ans
+
 
 ################ DANNY's C Code ########
 def wrap_function(lib, funcname, restype, argtypes):
@@ -48,7 +97,7 @@ mlFeature_ptr = (ctypes.c_double * (BUFFER_SIZE * 5) )()
 c_fitCurve = wrap_function(bez_fit_lib,"c_FitCurve",ctypes.c_int,[ctypes.POINTER(ctypes.c_double),ctypes.c_int,ctypes.c_double,ctypes.POINTER(ctypes.c_double)]);
 c_mlEncode = wrap_function(bez_fit_lib,"c_ML_EncodeCurves",None,[ctypes.POINTER(ctypes.c_double),ctypes.c_int,ctypes.POINTER(ctypes.c_double)]);
 def fitCurve(coords,error=6.0):
-    if(len(coords)==1):coords = [coords[0],coords[0]]
+    # if(len(coords)==1):coords = [coords[0],coords[0]]
     flat_coords = np.array(coords,dtype=np.float64)[:,:2].reshape(-1)
     point_ptr[:len(coords)*2] = flat_coords#np.array(list(itertools.chain(*coords)),dtype=np.float64)
     n_beziers = c_fitCurve(point_ptr,len(coords),error*error,bezier_ptr)
@@ -229,7 +278,7 @@ class Extractor(object):
                 for trace_id in symbol['trace_group']:
                     trace = traces_data['traces'][trace_id]
                     # print(trace['coords'],type(trace['coords']))
-                    stroke_coords.append(trace['coords'])
+                    stroke_coords.append(np.array(trace['coords'],dtype=np.float32)[:,:2])
                     stroke_beziers.append(fitCurve(trace['coords']))
                     # print(stroke_beziers[-1])
             except Exception:
@@ -504,7 +553,14 @@ if __name__ == '__main__':
     # if out_format == out_formats[0]:
 
     train_data, test_data, validation_data = extractor.bezier()
-    data_to_save = [train_data.copy(), test_data.copy(), validation_data.copy()]
+
+    save_dict_to_hdf5(train_data, 'train.hdf5')
+    save_dict_to_hdf5(test_data, 'test.hdf5')
+    save_dict_to_hdf5(validation_data, 'validation.hdf5')
+    # save_dict_to_hdf5({str(i):v for i,v in enumerate(train_data)}, 'train.hdf5')
+    # save_dict_to_hdf5({str(i):v for i,v in enumerate(test_data)}, 'test.hdf5')
+    # save_dict_to_hdf5({str(i):v for i,v in enumerate(validation_data)}, 'validation.hdf5')
+    # data_to_save = [train_data.copy(), test_data.copy(), validation_data.copy()]
     # print(train_data)
     # print(test_data)
     # print(validation_data)
@@ -513,8 +569,8 @@ if __name__ == '__main__':
     # print()
     # print('How many classes:', len(classes))
 
-    raise NotImplemented("I haven't actually written any thing to store or use this dataset"
-                         "yet. Might want to store as an HDF5 and load it into a notebook.")
+    # raise NotImplemented("I haven't actually written any thing to store or use this dataset"
+    #                      "yet. Might want to store as an HDF5 and load it into a notebook.")
     # with open('classes.txt', 'w') as desc:
     #     for r_class in classes:
     #         desc.write(r_class + '\n')

@@ -21,6 +21,8 @@ import itertools
 import numpy as np
 
 import numpy as np
+
+
 import h5py
 import os
 import h5py
@@ -30,8 +32,12 @@ def save_dict_to_hdf5(dic, filename):
     """
     ....
     """
+    print(len(dic))
+
     with h5py.File(filename, 'w') as h5file:
         recursively_save_dict_contents_to_group(h5file, '/', dic)
+        h5file.close();
+
 
 def recursively_save_dict_contents_to_group(h5file, path, dic):
     """
@@ -113,25 +119,28 @@ class Extractor(object):
     crohme_package = os.path.join('data', 'CROHME_full_v2')
     output_dir = 'outputs'
 
-    versions_available = ['2011', '2012', '2013']
+    versions_available = ['2011', '2012', '2013', '2020', '2021']
 
+    minx = miny = 123123123
+    maxx = maxy = -123123123
+    status = 1
     # Loads all categories that are available
     def load_categories(self):
 
         with open('categories.txt', 'r') as desc:
 
             lines = desc.readlines()
-            print("hi")
+            #print("hi")
 
             # Removing any whitespace characters appearing in the lines
-            print(lines)
+            #print(lines)
             categories = [{ "name": line.split(":")[0],
                             "classes": line.split(":")[1].strip().split(" ")}
                             for line in lines]
 
             return categories
 
-    def __init__(self,versions="2013", categories="all"):
+    def __init__(self, versions="2013", categories="all"):
 
         # try:
         #     self.box_size = int(box_size)
@@ -145,6 +154,7 @@ class Extractor(object):
         # Split by '+' delimeters
         versions = versions.split('+')
         categories = categories.split('+')
+        print(categories)
         for version in versions:
 
             if version not in self.versions_available:
@@ -157,7 +167,7 @@ class Extractor(object):
 
         # Get names of available categories
         category_names = [category["name"] for category in self.categories_available]
-        print(category_names)
+        #print(category_names)
         classes = []
         for category in categories:
 
@@ -181,30 +191,67 @@ class Extractor(object):
         self.test_data = []
         self.validation_data = []
 
-    def bezier(self):
-
+    def bezier(self, status = 1):
+        self.status = status
         # Load inkml files
         for version in self.versions:
 
+            #start test
+            if version == "2020":
+                data_dir = os.path.join(self.crohme_package, "CROHMETEST_data")
+                train_dir = os.path.join(data_dir, "trainData")
+                test_dir = os.path.join(data_dir, "testDataGT")
+                validation_dir = os.path.join(data_dir, "testData")
+
+                if self.status == 1:
+                    self.train_data += self.parse_inkmls(train_dir)
+                else:
+                    self.parse_inkmls(train_dir)
+                #self.test_data += self.parse_inkmls(test_dir)
+                #self.validation_data += self.parse_inkmls(validation_dir)
+
+            if version == "2021":
+                data_dir = os.path.join(self.crohme_package, "CROHMETEST2_data")
+                train_dir = os.path.join(data_dir, "trainData")
+                test_dir = os.path.join(data_dir, "testDataGT")
+                validation_dir = os.path.join(data_dir, "testData")
+
+                if self.status == 1:
+                    self.train_data += self.parse_inkmls(train_dir)
+                else:
+                    self.parse_inkmls(train_dir)
+                #self.test_data += self.parse_inkmls(test_dir)
+                #self.validation_data += self.parse_inkmls(validation_dir)
+
+            #end test
             if version == "2011":
                 data_dir = os.path.join(self.crohme_package, "CROHME2011_data")
                 train_dir = os.path.join(data_dir, "CROHME_training")
                 test_dir = os.path.join(data_dir, "CROHME_testGT")
                 validation_dir = os.path.join(data_dir, "CROHME_test")
 
-                self.train_data += self.parse_inkmls(train_dir)
-                self.test_data += self.parse_inkmls(test_dir)
-                self.validation_data += self.parse_inkmls(validation_dir)
-
+                if self.status == 1:
+                    self.train_data += self.parse_inkmls(train_dir)
+                    #self.test_data += self.parse_inkmls(test_dir)
+                    #self.validation_data += self.parse_inkmls(validation_dir)
+                else:
+                    self.parse_inkmls(train_dir)
+                    #self.parse_inkmls(test_dir)
+                    #self.parse_inkmls(validation_dir)
             if version == "2012":
                 data_dir = os.path.join(self.crohme_package, "CROHME2012_data")
                 train_dir = os.path.join(data_dir, "trainData")
                 test_dir = os.path.join(data_dir, "testDataGT")
                 validation_dir = os.path.join(data_dir, "testData")
 
-                self.train_data += self.parse_inkmls(train_dir)
-                self.test_data += self.parse_inkmls(test_dir)
-                self.validation_data += self.parse_inkmls(validation_dir)
+                if self.status == 1:
+                    self.train_data += self.parse_inkmls(train_dir)
+                    # self.test_data += self.parse_inkmls(test_dir)
+                    # self.validation_data += self.parse_inkmls(validation_dir)
+                else:
+                    self.parse_inkmls(train_dir)
+                    # self.parse_inkmls(test_dir)
+                    # self.parse_inkmls(validation_dir)
 
             if version == "2013":
                 data_dir = os.path.join(self.crohme_package, "CROHME2013_data")
@@ -245,7 +292,7 @@ class Extractor(object):
                 if inkml_file.endswith('.inkml'):
                     inkml_file_abs_path = os.path.join(data_dir_abs_path, inkml_file)
 
-                    print('Parsing:', inkml_file_abs_path, '...')
+                    #print('Parsing:', inkml_file_abs_path, '...')
 
                     ' **** Each entry in traces_data represent SEPARATE pattern\
                         which might(NOT) have its label encoded along with traces that it\'s made up of **** '
@@ -270,6 +317,24 @@ class Extractor(object):
         # classes_rejected = []
 
         # symbol_maxDims = []
+        #print(self.minx, self.miny)
+        for symbol in traces_data['symbols']:
+            try:
+                for trace_id in symbol['trace_group']:
+                    trace = traces_data['traces'][trace_id]
+                    #print(len(trace['coords']))
+                    for coor in range(len(trace['coords'])):
+                        #print(trace['coords'][coor])
+                        #print(self.minx, self.miny)
+                        if self.status == 1:
+                            trace['coords'][coor][0] -= self.minx
+                            trace['coords'][coor][1] -= self.miny
+                        #print(trace['coords'][coor])
+                        #print()
+
+            except:
+                print("corrupted data... skipping")
+                continue
 
         for symbol in traces_data['symbols']:
             stroke_coords = []
@@ -277,7 +342,7 @@ class Extractor(object):
             try:
                 for trace_id in symbol['trace_group']:
                     trace = traces_data['traces'][trace_id]
-                    # print(trace['coords'],type(trace['coords']))
+                    #print(trace['coords'],type(trace['coords']))
                     stroke_coords.append(np.array(trace['coords'],dtype=np.float32)[:,:2])
                     stroke_beziers.append(fitCurve(trace['coords']))
                     # print(stroke_beziers[-1])
@@ -285,9 +350,25 @@ class Extractor(object):
                 print("corrupted data... skipping")
                 continue
 
-            symbol_enc = {"label":symbol['label'],"coords": stroke_coords, "feat_bez_curves" : stroke_beziers}
+            symbol_enc = {"label": symbol['label'],"coords": stroke_coords, "feat_bez_curves" : stroke_beziers}
             symbol_encs.append(symbol_enc)
+            #print('Trace ', i, ' ', symbol)
+            #print('#Coords: ', len(stroke_coords[0]))
 
+            #minx, miny, maxx, maxy = get_min_coords()
+            if self.status == 0:
+                for coor in stroke_coords[0]:
+                    #print(coor)
+                    self.minx = min(coor[0], self.minx)
+                    self.miny = min(coor[1], self.miny)
+                    self.maxx = max(coor[0], self.maxx)
+                    self.maxy = max(coor[1], self.maxy)
+            #print(minx, miny, maxx, maxy)
+            #print((maxx-minx) * (maxy-miny))
+            #print('#Curves: ', len(stroke_beziers[0]))
+            #i += 1
+            #print(symbol_enc['feat_bez_curves'])
+            #print()
 
             # min_x, min_y, max_x, max_y = self.get_min_coords(trace_group)
             # width = max_x - min_x;
@@ -295,16 +376,11 @@ class Extractor(object):
             # symbol_maxDims.append(max(width,height))
 
             # print(symbol['label'],max(width,height))
-        return symbol_encs
+        if self.status == 1:
+            return symbol_encs
+        return 0
         # medianMaxDim = median(symbol_maxDims)
         # ScaleRatio = box_size/medianMaxDim
-
-
-
-        
-        
-        
-
 
         # print("MEDIAN", medianMaxDim)
         
@@ -364,12 +440,14 @@ class Extractor(object):
 
         'Stores traces_all with their corresponding id'
         traces_all = [{'id': trace_tag.get('id'),
-                        'coords': [[round(float(axis_coord)) if float(axis_coord).is_integer() else round(float(axis_coord) * 10000) \
-                                        for axis_coord in coord[1:].split(' ')] if coord.startswith(' ') \
-                                    else [round(float(axis_coord)) if float(axis_coord).is_integer() else round(float(axis_coord) * 10000) \
-                                        for axis_coord in coord.split(' ')] \
-                                for coord in (trace_tag.text).replace('\n', '').split(',')]} \
-                                for trace_tag in root.findall(doc_namespace + 'trace')]
+                       'coords': [[round(float(axis_coord)) if float(axis_coord).is_integer() else round(
+                           float(axis_coord) * 10000) \
+                                   for axis_coord in coord[1:].split(' ')] if coord.startswith(' ') \
+                                      else [round(float(axis_coord)) if float(axis_coord).is_integer() else round(
+                           float(axis_coord) * 10000) \
+                                            for axis_coord in coord.split(' ')] \
+                                  for coord in (trace_tag.text).replace('\n', '').split(',')]} \
+                      for trace_tag in root.findall(doc_namespace + 'trace')]
 
         'Sort traces_all list by id to make searching for references faster'
         traces_all.sort(key=lambda trace_dict: int(trace_dict['id']))
@@ -420,6 +498,12 @@ class Extractor(object):
             max_y_coords.append(max(y_coords))
 
         return min(min_x_coords), min(min_y_coords), max(max_x_coords), max(max_y_coords)
+
+    def reset_min(self):
+        self.minx = self.miny = 123123123
+        self.maxx = self.maxy = -123123123
+    def get_min_set(self):
+        return self.minx, self.miny, self.maxx, self.maxy
 
     'shift pattern to its relative position'
     def shift_trace_grp(self, trace_group, min_x, min_y):
@@ -552,11 +636,13 @@ if __name__ == '__main__':
     # Extract pixel features
     # if out_format == out_formats[0]:
 
-    train_data, test_data, validation_data = extractor.bezier()
-
+    extractor.bezier(0)
+    print(extractor.get_min_set())
+    train_data, test_data, validation_data = extractor.bezier(1)
+    #print(len(train_data))
     save_dict_to_hdf5(train_data, 'train.hdf5')
-    save_dict_to_hdf5(test_data, 'test.hdf5')
-    save_dict_to_hdf5(validation_data, 'validation.hdf5')
+    #save_dict_to_hdf5(test_data, 'test.hdf5')
+    #save_dict_to_hdf5(validation_data, 'validation.hdf5')
     # save_dict_to_hdf5({str(i):v for i,v in enumerate(train_data)}, 'train.hdf5')
     # save_dict_to_hdf5({str(i):v for i,v in enumerate(test_data)}, 'test.hdf5')
     # save_dict_to_hdf5({str(i):v for i,v in enumerate(validation_data)}, 'validation.hdf5')

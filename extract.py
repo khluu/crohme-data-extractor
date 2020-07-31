@@ -19,6 +19,7 @@ from statistics import median
 import ctypes
 import itertools
 import numpy as np
+import matplotlib.pyplot as plt
 
 import numpy as np
 
@@ -32,8 +33,9 @@ def save_dict_to_hdf5(dic, filename):
     """
     ....
     """
-    print(len(dic))
-
+    #print(len(dic))
+    #print(len(dic[0]))
+    #print(dic[0][5])
     with h5py.File(filename, 'w') as h5file:
         recursively_save_dict_contents_to_group(h5file, '/', dic)
         h5file.close();
@@ -102,12 +104,14 @@ bezier_ptr = (ctypes.c_double * BUFFER_SIZE)()
 mlFeature_ptr = (ctypes.c_double * (BUFFER_SIZE * 5) )()
 c_fitCurve = wrap_function(bez_fit_lib,"c_FitCurve",ctypes.c_int,[ctypes.POINTER(ctypes.c_double),ctypes.c_int,ctypes.c_double,ctypes.POINTER(ctypes.c_double)]);
 c_mlEncode = wrap_function(bez_fit_lib,"c_ML_EncodeCurves",None,[ctypes.POINTER(ctypes.c_double),ctypes.c_int,ctypes.POINTER(ctypes.c_double)]);
-def fitCurve(coords,error=6.0):
-    # if(len(coords)==1):coords = [coords[0],coords[0]]
-    flat_coords = np.array(coords,dtype=np.float64)[:,:2].reshape(-1)
-    point_ptr[:len(coords)*2] = flat_coords#np.array(list(itertools.chain(*coords)),dtype=np.float64)
-    n_beziers = c_fitCurve(point_ptr,len(coords),error*error,bezier_ptr)
-    c_mlEncode(bezier_ptr,n_beziers,mlFeature_ptr)
+
+def fitCurve(coords, error=6.0):
+    flat_coords = np.array(coords, dtype=np.float64)[:, :2].reshape(-1)
+    #print('Done plotting')
+    point_ptr[:len(coords) * 2] = flat_coords  # np.array(list(itertools.chain(*coords)),dtype=np.float64)
+    n_beziers = c_fitCurve(point_ptr, len(coords), error * error, bezier_ptr)
+    c_mlEncode(bezier_ptr, n_beziers, mlFeature_ptr)
+    #print(np.array(mlFeature_ptr[:9*n_beziers]).reshape((-1,9)))
     return np.array(mlFeature_ptr[:9*n_beziers]).reshape((-1,9))
 
 ########################################
@@ -198,6 +202,7 @@ class Extractor(object):
 
             #start test
             if version == "2020":
+                #print(fitCurve(b))
                 data_dir = os.path.join(self.crohme_package, "CROHMETEST_data")
                 train_dir = os.path.join(data_dir, "trainData")
                 test_dir = os.path.join(data_dir, "testDataGT")
@@ -226,32 +231,32 @@ class Extractor(object):
             #end test
             if version == "2011":
                 data_dir = os.path.join(self.crohme_package, "CROHME2011_data")
-                train_dir = os.path.join(data_dir, "CROHME_training")
+                train_dir = os.path.join(data_dir, "CROHME_training/CROHME_training")
                 test_dir = os.path.join(data_dir, "CROHME_testGT")
-                validation_dir = os.path.join(data_dir, "CROHME_test")
+                validation_dir = os.path.join(data_dir, "CROHME_testGT/CROHME_testGT")
 
                 if self.status == 1:
                     self.train_data += self.parse_inkmls(train_dir)
                     #self.test_data += self.parse_inkmls(test_dir)
-                    #self.validation_data += self.parse_inkmls(validation_dir)
+                    self.validation_data += self.parse_inkmls(validation_dir)
                 else:
                     self.parse_inkmls(train_dir)
                     #self.parse_inkmls(test_dir)
-                    #self.parse_inkmls(validation_dir)
+                    self.parse_inkmls(validation_dir)
             if version == "2012":
                 data_dir = os.path.join(self.crohme_package, "CROHME2012_data")
                 train_dir = os.path.join(data_dir, "trainData")
-                test_dir = os.path.join(data_dir, "testDataGT")
-                validation_dir = os.path.join(data_dir, "testData")
+                test_dir = os.path.join(data_dir, "testData")
+                validation_dir = os.path.join(data_dir, "testDataGT")
 
                 if self.status == 1:
                     self.train_data += self.parse_inkmls(train_dir)
-                    # self.test_data += self.parse_inkmls(test_dir)
-                    # self.validation_data += self.parse_inkmls(validation_dir)
+                    #self.test_data += self.parse_inkmls(test_dir)
+                    self.validation_data += self.parse_inkmls(validation_dir)
                 else:
                     self.parse_inkmls(train_dir)
                     # self.parse_inkmls(test_dir)
-                    # self.parse_inkmls(validation_dir)
+                    self.parse_inkmls(validation_dir)
 
             if version == "2013":
                 data_dir = os.path.join(self.crohme_package, "CROHME2013_data")
@@ -263,22 +268,32 @@ class Extractor(object):
                 train_dir_5 = os.path.join(train_root_dir, "MathBrush")
                 train_dir_6 = os.path.join(train_root_dir, "MfrDB")
 
-                test_dir = os.path.join(data_dir, "TestINKMLGT")
-                validation_dir = os.path.join(data_dir, "TestINKML")
+                test_dir = os.path.join(data_dir, "TestINKML")
+                validation_dir = os.path.join(data_dir, "TestINKMLGT")
 
-                self.train_data += self.parse_inkmls(train_dir_1)
-                self.train_data += self.parse_inkmls(train_dir_2)
-                self.train_data += self.parse_inkmls(train_dir_3)
-                self.train_data += self.parse_inkmls(train_dir_4)
-                self.train_data += self.parse_inkmls(train_dir_5)
-                self.train_data += self.parse_inkmls(train_dir_6)
-                self.test_data += self.parse_inkmls(test_dir)
-                self.validation_data += self.parse_inkmls(validation_dir)
+                if self.status == 1:
+                    self.train_data += self.parse_inkmls(train_dir_1)
+                    self.train_data += self.parse_inkmls(train_dir_2)
+                    self.train_data += self.parse_inkmls(train_dir_3)
+                    self.train_data += self.parse_inkmls(train_dir_4)
+                    self.train_data += self.parse_inkmls(train_dir_5)
+                    self.train_data += self.parse_inkmls(train_dir_6)
+                    #self.test_data += self.parse_inkmls(test_dir)
+                    self.validation_data += self.parse_inkmls(validation_dir)
+                else:
+                    self.parse_inkmls(train_dir_1)
+                    self.parse_inkmls(train_dir_2)
+                    self.parse_inkmls(train_dir_3)
+                    self.parse_inkmls(train_dir_4)
+                    self.parse_inkmls(train_dir_5)
+                    self.parse_inkmls(train_dir_6)
+                    #self.parse_inkmls(test_dir)
+                    self.parse_inkmls(validation_dir)
 
         return self.train_data, self.test_data, self.validation_data
 
     def parse_inkmls(self, data_dir_abs_path):
-
+        print(data_dir_abs_path)
         'Accumulates traces_data of all the inkml files\
         located in the specified directory'
         encoded_samples = []
@@ -318,67 +333,82 @@ class Extractor(object):
 
         # symbol_maxDims = []
         #print(self.minx, self.miny)
-        for symbol in traces_data['symbols']:
-            try:
+        xx = []
+        yy = []
+        minx = 2400000
+        miny = 2400000
+        maxx = -2400000
+        maxy = -2400000
+        if self.status == 1:
+
+            for symbol in traces_data['symbols']:
+                minx = 2400000
+                miny = 2400000
+                maxx = -2400000
+                maxy = -2400000
                 for trace_id in symbol['trace_group']:
                     trace = traces_data['traces'][trace_id]
-                    #print(len(trace['coords']))
-                    for coor in range(len(trace['coords'])):
-                        #print(trace['coords'][coor])
-                        #print(self.minx, self.miny)
-                        if self.status == 1:
-                            trace['coords'][coor][0] -= self.minx
-                            trace['coords'][coor][1] -= self.miny
-                        #print(trace['coords'][coor])
-                        #print()
+                    for coord in trace['coords']:
+                        #print(coord)
+                        minx = min(minx, coord[0])
+                        miny = min(miny, coord[1])
 
-            except:
-                print("corrupted data... skipping")
-                continue
+                #print(minx,miny,maxx,maxy)
+                for trace_id in symbol['trace_group']:
+                    trace = traces_data['traces'][trace_id]
+                    for coord in trace['coords']:
+                        #print(coord)
+                        coord[0] -= minx
+                        coord[1] -= miny
+                for trace_id in symbol['trace_group']:
+                    trace = traces_data['traces'][trace_id]
+                    for coord in trace['coords']:
+                        #print(coord)
+                        maxx = max(maxx,coord[0])
+                        maxy = max(maxy, coord[1])
+                #print(maxx, maxy)
+                #print(symbol)
+                for trace_id in symbol['trace_group']:
+                    trace = traces_data['traces'][trace_id]
+                    for coord in trace['coords']:
+
+                        coord[0] /= max(1/100, max(maxx, maxy) / 100)
+                        coord[1] /= max(1/100, max(maxx, maxy) / 100)
 
         for symbol in traces_data['symbols']:
+            #print(symbol)
             stroke_coords = []
             stroke_beziers = []
+            stroke_coords_rev = []
+            stroke_beziers_rev = []
+            xx = []
+            yy = []
             try:
                 for trace_id in symbol['trace_group']:
                     trace = traces_data['traces'][trace_id]
-                    #print(trace['coords'],type(trace['coords']))
+                    #for coord in trace['coords']:
+                    #    xx.append(coord[0])
+                    #    yy.append(coord[1] * -1)
                     stroke_coords.append(np.array(trace['coords'],dtype=np.float32)[:,:2])
                     stroke_beziers.append(fitCurve(trace['coords']))
-                    # print(stroke_beziers[-1])
+                    trace_rev = trace['coords'][::-1]
+                    stroke_coords_rev.append(np.array(trace_rev, dtype=np.float32)[:,:2])
+                    stroke_beziers_rev.append(fitCurve(trace_rev))
             except Exception:
-                print("corrupted data... skipping")
+                print("corrupted data3... skipping")
                 continue
-
+            #plt.xlim(-10, 100)
+            #plt.ylim(-100,10)
+            #print(stroke_beziers)
+            #plt.plot(xx, yy, 'ro')
+            #plt.show()
             symbol_enc = {"label": symbol['label'],"coords": stroke_coords, "feat_bez_curves" : stroke_beziers}
+            symbol_enc_rev = {"label": symbol['label'], "coords": stroke_coords_rev, "feat_bez_curves": stroke_beziers_rev}
             symbol_encs.append(symbol_enc)
-            #print('Trace ', i, ' ', symbol)
-            #print('#Coords: ', len(stroke_coords[0]))
+            symbol_encs.append(symbol_enc_rev)
 
-            #minx, miny, maxx, maxy = get_min_coords()
-            if self.status == 0:
-                for coor in stroke_coords[0]:
-                    #print(coor)
-                    self.minx = min(coor[0], self.minx)
-                    self.miny = min(coor[1], self.miny)
-                    self.maxx = max(coor[0], self.maxx)
-                    self.maxy = max(coor[1], self.maxy)
-            #print(minx, miny, maxx, maxy)
-            #print((maxx-minx) * (maxy-miny))
-            #print('#Curves: ', len(stroke_beziers[0]))
-            #i += 1
-            #print(symbol_enc['feat_bez_curves'])
-            #print()
 
-            # min_x, min_y, max_x, max_y = self.get_min_coords(trace_group)
-            # width = max_x - min_x;
-            # height = max_y - min_y;
-            # symbol_maxDims.append(max(width,height))
-
-            # print(symbol['label'],max(width,height))
-        if self.status == 1:
-            return symbol_encs
-        return 0
+        return symbol_encs
         # medianMaxDim = median(symbol_maxDims)
         # ScaleRatio = box_size/medianMaxDim
 
@@ -437,7 +467,7 @@ class Extractor(object):
         tree = ET.parse(inkml_file_abs_path)
         root = tree.getroot()
         doc_namespace = "{http://www.w3.org/2003/InkML}"
-
+        print(inkml_file_abs_path)
         'Stores traces_all with their corresponding id'
         traces_all = [{'id': trace_tag.get('id'),
                        'coords': [[round(float(axis_coord)) if float(axis_coord).is_integer() else round(
@@ -635,14 +665,12 @@ if __name__ == '__main__':
 
     # Extract pixel features
     # if out_format == out_formats[0]:
-
-    extractor.bezier(0)
-    print(extractor.get_min_set())
+    #extractor.bezier(0)
+    #print(extractor.get_min_set())
     train_data, test_data, validation_data = extractor.bezier(1)
-    #print(len(train_data))
     save_dict_to_hdf5(train_data, 'train.hdf5')
     #save_dict_to_hdf5(test_data, 'test.hdf5')
-    #save_dict_to_hdf5(validation_data, 'validation.hdf5')
+    save_dict_to_hdf5(validation_data, 'validation.hdf5')
     # save_dict_to_hdf5({str(i):v for i,v in enumerate(train_data)}, 'train.hdf5')
     # save_dict_to_hdf5({str(i):v for i,v in enumerate(test_data)}, 'test.hdf5')
     # save_dict_to_hdf5({str(i):v for i,v in enumerate(validation_data)}, 'validation.hdf5')
